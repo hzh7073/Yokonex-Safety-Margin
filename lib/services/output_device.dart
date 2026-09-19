@@ -5,25 +5,30 @@ import 'package:flutter/foundation.dart';
 import '../domain/game_engine.dart';
 import 'coyote_device.dart';
 import 'ems_device.dart';
+import 'simulation_device.dart';
 
-enum OutputDeviceType { yokonex, dglabCoyote }
+enum OutputDeviceType { yokonex, dglabCoyote, simulation }
 
 class OutputDeviceController extends ChangeNotifier implements TriggerSink {
   OutputDeviceController({
     EmsDeviceController? yokonex,
     CoyoteDeviceController? coyote,
+    SimulationOutputController? simulation,
   }) : yokonex = yokonex ?? EmsDeviceController(),
-       coyote = coyote ?? CoyoteDeviceController() {
+       coyote = coyote ?? CoyoteDeviceController(),
+       simulation = simulation ?? SimulationOutputController() {
     this.yokonex.addListener(_childChanged);
     this.coyote.addListener(_childChanged);
     this.yokonex.onFault = (message) =>
         _childFault(OutputDeviceType.yokonex, message);
     this.coyote.onFault = (message) =>
         _childFault(OutputDeviceType.dglabCoyote, message);
+    this.simulation.addListener(_childChanged);
   }
 
   final EmsDeviceController yokonex;
   final CoyoteDeviceController coyote;
+  final SimulationOutputController simulation;
   OutputDeviceType selected = OutputDeviceType.yokonex;
   void Function(String message)? onFault;
   bool _disposed = false;
@@ -31,11 +36,13 @@ class OutputDeviceController extends ChangeNotifier implements TriggerSink {
   bool get connected => switch (selected) {
     OutputDeviceType.yokonex => yokonex.connected,
     OutputDeviceType.dglabCoyote => coyote.connected,
+    OutputDeviceType.simulation => simulation.connected,
   };
 
   bool get readyToOutput => switch (selected) {
     OutputDeviceType.yokonex => yokonex.readyToOutput,
     OutputDeviceType.dglabCoyote => coyote.readyToOutput,
+    OutputDeviceType.simulation => simulation.readyToOutput,
   };
 
   Future<void> select(OutputDeviceType value) async {
@@ -52,6 +59,8 @@ class OutputDeviceController extends ChangeNotifier implements TriggerSink {
         yokonex.emit(event);
       case OutputDeviceType.dglabCoyote:
         coyote.emit(event);
+      case OutputDeviceType.simulation:
+        simulation.emit(event);
     }
   }
 
@@ -63,12 +72,14 @@ class OutputDeviceController extends ChangeNotifier implements TriggerSink {
   Future<void> stop() => switch (selected) {
     OutputDeviceType.yokonex => yokonex.stop(),
     OutputDeviceType.dglabCoyote => coyote.stop(),
+    OutputDeviceType.simulation => simulation.stop(),
   };
 
   Future<void> emergencyStop() async {
     await Future.wait([
       yokonex.stop().catchError((Object _) {}),
       coyote.emergencyStop(notify: false).catchError((Object _) {}),
+      simulation.emergencyStop().catchError((Object _) {}),
     ]);
     if (!_disposed) notifyListeners();
   }
@@ -78,6 +89,7 @@ class OutputDeviceController extends ChangeNotifier implements TriggerSink {
     await Future.wait([
       yokonex.disconnect().catchError((Object _) {}),
       coyote.disconnect().catchError((Object _) {}),
+      simulation.stop().catchError((Object _) {}),
     ]);
   }
 
@@ -94,10 +106,12 @@ class OutputDeviceController extends ChangeNotifier implements TriggerSink {
     _disposed = true;
     yokonex.removeListener(_childChanged);
     coyote.removeListener(_childChanged);
+    simulation.removeListener(_childChanged);
     yokonex.onFault = null;
     coyote.onFault = null;
     yokonex.dispose();
     coyote.dispose();
+    simulation.dispose();
     super.dispose();
   }
 }

@@ -15,6 +15,7 @@ class SavedSetup {
     this.emsConfig = const EmsConfig(),
     this.outputDeviceType = OutputDeviceType.yokonex,
     this.coyoteConfig = const CoyoteConfig(),
+    this.simulationConfig = const CoyoteConfig(),
   });
   final GameConfig config;
   final ActivityRegion? region;
@@ -22,6 +23,7 @@ class SavedSetup {
   final EmsConfig emsConfig;
   final OutputDeviceType outputDeviceType;
   final CoyoteConfig coyoteConfig;
+  final CoyoteConfig simulationConfig;
 }
 
 abstract interface class SettingsStore {
@@ -59,6 +61,15 @@ class LocalSettingsStore implements SettingsStore {
             : CoyoteConfig.fromJson(
                 json['coyoteConfig'] as Map<String, dynamic>,
               ),
+        simulationConfig: json['simulationConfig'] == null
+            ? (json['coyoteConfig'] == null
+                  ? const CoyoteConfig()
+                  : CoyoteConfig.fromJson(
+                      json['coyoteConfig'] as Map<String, dynamic>,
+                    ))
+            : CoyoteConfig.fromJson(
+                json['simulationConfig'] as Map<String, dynamic>,
+              ),
       );
     } on Object {
       // 损坏或不兼容的本机记录不能阻止进入准备页。
@@ -75,6 +86,7 @@ class LocalSettingsStore implements SettingsStore {
       'emsConfig': setup.emsConfig.toJson(),
       'outputDeviceType': setup.outputDeviceType.name,
       'coyoteConfig': setup.coyoteConfig.toJson(),
+      'simulationConfig': setup.simulationConfig.toJson(),
     });
     final write = _writes.then((_) async {
       final prefs = await SharedPreferences.getInstance();

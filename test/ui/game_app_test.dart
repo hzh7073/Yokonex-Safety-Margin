@@ -641,6 +641,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('EMS 设备'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('DG-LAB Coyote'));
     await tester.tap(find.text('DG-LAB Coyote'));
     await tester.pumpAndSettle();
     expect(find.text('DG-LAB Coyote 3.0'), findsOneWidget);
@@ -672,6 +673,45 @@ void main() {
     await tester.pumpAndSettle();
     await emsTransport.close();
     await coyoteTransport.dispose();
+  });
+
+  testWidgets('模拟输出无需设备即可测试并急停', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final emsTransport = _WidgetEmsTransport();
+    final c = GameCoordinator(
+      ems: EmsDeviceController(transport: emsTransport),
+      cameraFactory: (epoch) => FakePoseCamera(epoch),
+      store: FakeSettingsStore(),
+      keepAwake: (_) async {},
+      autoTick: false,
+    );
+    await tester.pumpWidget(SafetyMarginApp(coordinator: c));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('EMS 设备'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('模拟输出'));
+    await tester.tap(find.text('模拟输出'));
+    await tester.pumpAndSettle();
+    expect(find.text('模拟输出'), findsNWidgets(2));
+    expect(find.textContaining('不会连接'), findsOneWidget);
+    expect(find.byKey(const ValueKey('simulation_test')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const ValueKey('simulation_test')));
+    await tester.tap(find.byKey(const ValueKey('simulation_test')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('simulation_active')), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('simulation_emergency_stop')),
+    );
+    await tester.tap(find.byKey(const ValueKey('simulation_emergency_stop')));
+    await tester.pump();
+    expect(find.text('当前空闲'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+    await emsTransport.close();
   });
 
   testWidgets('可切换九种外语且核心文案完整显示', (tester) async {

@@ -13,6 +13,7 @@ import '../domain/pose_sample.dart';
 import '../services/ems_device.dart';
 import '../services/coyote_device.dart';
 import '../services/output_device.dart';
+import '../services/simulation_device.dart';
 import '../services/pose_camera.dart';
 import '../services/settings_store.dart';
 
@@ -58,6 +59,7 @@ class GameCoordinator extends ChangeNotifier {
   late final OutputDeviceController? output;
   EmsDeviceController? get ems => output?.yokonex;
   CoyoteDeviceController? get coyote => output?.coyote;
+  SimulationOutputController? get simulation => output?.simulation;
   OutputDeviceType get outputDeviceType =>
       output?.selected ?? OutputDeviceType.yokonex;
   late final PoseCamera camera;
@@ -122,6 +124,7 @@ class GameCoordinator extends ChangeNotifier {
     _resetModeSession();
     ems?.configure(setup.emsConfig);
     coyote?.configure(setup.coyoteConfig);
+    simulation?.configure(setup.simulationConfig);
     if (output != null) output!.selected = setup.outputDeviceType;
     // 仅选择原有 Yokonex 时申请蓝牙权限，选择郊狼不会弹出无关权限。
     if (outputDeviceType == OutputDeviceType.yokonex) {
@@ -280,6 +283,12 @@ class GameCoordinator extends ChangeNotifier {
     unawaited(_save());
   }
 
+  void updateSimulationConfig(CoyoteConfig value) {
+    if (engine.phase != GamePhase.ready || simulation == null) return;
+    simulation!.configure(value);
+    unawaited(_save());
+  }
+
   Future<void> updateOutputDeviceType(OutputDeviceType value) async {
     if (engine.phase != GamePhase.ready || output == null) return;
     await output!.select(value);
@@ -355,6 +364,7 @@ class GameCoordinator extends ChangeNotifier {
           emsConfig: ems?.config ?? const EmsConfig(),
           outputDeviceType: outputDeviceType,
           coyoteConfig: coyote?.config ?? const CoyoteConfig(),
+          simulationConfig: simulation?.config ?? const CoyoteConfig(),
         ),
       );
     } catch (_) {

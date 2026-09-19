@@ -44,6 +44,13 @@ void main() {
           cooldown: Duration(seconds: 4),
           directionalMapping: true,
         ),
+        simulationConfig: const CoyoteConfig(
+          channel: CoyoteChannel.b,
+          triggerIntensity: 4,
+          maxIntensity: 9,
+          duration: Duration(milliseconds: 700),
+          cooldown: Duration(seconds: 5),
+        ),
       ),
     );
     final loaded = await store.load();
@@ -67,6 +74,8 @@ void main() {
     expect(loaded.coyoteConfig.triggerIntensity, 8);
     expect(loaded.coyoteConfig.maxIntensity, 16);
     expect(loaded.coyoteConfig.directionalMapping, isTrue);
+    expect(loaded.simulationConfig.channel, CoyoteChannel.b);
+    expect(loaded.simulationConfig.maxIntensity, 9);
   });
   test('连续保存按顺序完成，区域清除可以持久化', () async {
     final store = LocalSettingsStore();

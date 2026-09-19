@@ -20,6 +20,7 @@ import '../domain/pose_sample.dart';
 import '../services/ems_device.dart';
 import '../services/coyote_device.dart';
 import '../services/output_device.dart';
+import '../services/simulation_device.dart';
 import 'app_localizations.dart';
 import 'app_theme.dart';
 import 'camera_stage.dart';
@@ -1999,37 +2000,51 @@ class _OutputSettingsSheetState extends State<_OutputSettingsSheet> {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: SegmentedButton<OutputDeviceType>(
-              key: const ValueKey('output_device_type'),
-              segments: const [
-                ButtonSegment(
-                  value: OutputDeviceType.yokonex,
-                  icon: Icon(Icons.bluetooth),
-                  label: Text('Yokonex'),
-                ),
-                ButtonSegment(
-                  value: OutputDeviceType.dglabCoyote,
-                  icon: Icon(Icons.qr_code_2),
-                  label: Text('DG-LAB Coyote'),
-                ),
-              ],
-              selected: {c.outputDeviceType},
-              onSelectionChanged: (selection) {
-                if (selection.isNotEmpty) {
-                  unawaited(c.updateOutputDeviceType(selection.first));
-                }
-              },
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SegmentedButton<OutputDeviceType>(
+                key: const ValueKey('output_device_type'),
+                segments: const [
+                  ButtonSegment(
+                    value: OutputDeviceType.yokonex,
+                    icon: Icon(Icons.bluetooth),
+                    label: Text('Yokonex'),
+                  ),
+                  ButtonSegment(
+                    value: OutputDeviceType.dglabCoyote,
+                    icon: Icon(Icons.qr_code_2),
+                    label: Text('DG-LAB Coyote'),
+                  ),
+                  ButtonSegment(
+                    value: OutputDeviceType.simulation,
+                    icon: Icon(Icons.science_outlined),
+                    label: Text('模拟输出'),
+                  ),
+                ],
+                selected: {c.outputDeviceType},
+                onSelectionChanged: (selection) {
+                  if (selection.isNotEmpty) {
+                    unawaited(c.updateOutputDeviceType(selection.first));
+                  }
+                },
+              ),
             ),
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: c.outputDeviceType == OutputDeviceType.yokonex
-                ? _EmsSettingsSheet(
-                    device: c.ems!,
-                    onSave: c.updateEmsConfig,
-                    embedded: true,
-                  )
-                : _CoyoteSettingsSheet(coordinator: c),
+            child: switch (c.outputDeviceType) {
+              OutputDeviceType.yokonex => _EmsSettingsSheet(
+                device: c.ems!,
+                onSave: c.updateEmsConfig,
+                embedded: true,
+              ),
+              OutputDeviceType.dglabCoyote => _CoyoteSettingsSheet(
+                coordinator: c,
+              ),
+              OutputDeviceType.simulation => _SimulationSettingsSheet(
+                coordinator: c,
+              ),
+            },
           ),
         ],
       ),
@@ -2687,6 +2702,274 @@ class _CoyoteSettingsSheetState extends State<_CoyoteSettingsSheet> {
             },
             icon: const Icon(Icons.check),
             label: const Text('保存设备设置'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SimulationSettingsSheet extends StatefulWidget {
+  const _SimulationSettingsSheet({required this.coordinator});
+
+  final GameCoordinator coordinator;
+
+  @override
+  State<_SimulationSettingsSheet> createState() =>
+      _SimulationSettingsSheetState();
+}
+
+class _SimulationSettingsSheetState extends State<_SimulationSettingsSheet> {
+  late CoyoteConfig _config = widget.coordinator.simulation!.config;
+
+  SimulationOutputController get device => widget.coordinator.simulation!;
+
+  @override
+  void initState() {
+    super.initState();
+    device.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    device.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _test() async {
+    widget.coordinator.updateSimulationConfig(_config);
+    try {
+      await device.testOutput();
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('已记录一次低强度模拟脉冲（不会发送到硬件）')));
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Bad state: ', '')),
+          ),
+        );
+      }
+    }
+  }
+
+  String _channels(List<int> channels) =>
+      channels.map((value) => value == 0 ? 'A' : 'B').join('+');
+
+  @override
+  Widget build(BuildContext context) {
+    final active = device.activePulse;
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        8,
+        24,
+        MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.science_outlined),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '模拟输出',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+              ),
+              Text(
+                '可用 · 离线',
+                style: TextStyle(
+                  color: AppColors.green,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                '模拟模式不会连接 Yokonex、DG-LAB 或任何外部设备。所有触发只会显示在本页面，适合在没有实体设备时验证游戏规则和输出链路。',
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (active != null)
+            Card(
+              key: const ValueKey('simulation_active'),
+              color: Theme.of(context).colorScheme.primaryContainer,
+              child: ListTile(
+                leading: const Icon(Icons.bolt),
+                title: Text(
+                  '${active.isTest ? '测试' : 'Safety 事件'} · ${_channels(active.channels)} · ${active.intensity}',
+                ),
+                subtitle: Text(
+                  '${active.waveform.name} · 剩余 ${(device.activeRemaining.inMilliseconds / 1000).toStringAsFixed(1)} s',
+                ),
+              ),
+            )
+          else
+            const ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.pause_circle_outline),
+              title: Text('当前空闲'),
+              subtitle: Text('没有正在执行的模拟输出'),
+            ),
+          if (device.history.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Text('最近模拟记录', style: TextStyle(fontWeight: FontWeight.w700)),
+            for (final pulse in device.history.reversed.take(5))
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  pulse.stopped ? Icons.stop_circle_outlined : Icons.bolt,
+                  color: pulse.stopped ? AppColors.muted : AppColors.green,
+                ),
+                title: Text(
+                  '${pulse.isTest ? '测试' : 'Safety 事件'} · ${_channels(pulse.channels)} · ${pulse.intensity}',
+                ),
+                subtitle: Text(
+                  '${pulse.waveform.name} · ${pulse.stopped ? '已停止' : '已完成'}',
+                ),
+              ),
+          ],
+          const Divider(height: 28),
+          const Text('输出通道', style: TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          SegmentedButton<CoyoteChannel>(
+            key: const ValueKey('simulation_channel'),
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: CoyoteChannel.a, label: Text('A')),
+              ButtonSegment(value: CoyoteChannel.b, label: Text('B')),
+              ButtonSegment(value: CoyoteChannel.both, label: Text('A+B')),
+            ],
+            selected: {_config.channel},
+            onSelectionChanged: (selection) => setState(
+              () => _config = _config.copyWith(channel: selection.first),
+            ),
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<CoyoteWaveform>(
+            key: const ValueKey('simulation_waveform'),
+            initialValue: _config.waveform,
+            decoration: const InputDecoration(labelText: '波形（仅用于模拟记录）'),
+            items: [
+              for (final waveform in coyoteWaveforms)
+                DropdownMenuItem(
+                  value: waveform.id,
+                  child: Text(waveform.label),
+                ),
+            ],
+            onChanged: (value) {
+              if (value != null) {
+                setState(() => _config = _config.copyWith(waveform: value));
+              }
+            },
+          ),
+          const SizedBox(height: 18),
+          _CoyoteSlider(
+            label: '触发强度（模拟）',
+            valueLabel: '${_config.triggerIntensity}',
+            value: _config.triggerIntensity.toDouble(),
+            min: 0,
+            max: CoyoteConfig.protocolMaxIntensity.toDouble(),
+            divisions: CoyoteConfig.protocolMaxIntensity,
+            onChanged: (value) => setState(
+              () => _config = _config.copyWith(triggerIntensity: value.round()),
+            ),
+          ),
+          _CoyoteSlider(
+            label: '最大允许强度',
+            valueLabel: '${_config.maxIntensity}',
+            value: _config.maxIntensity.toDouble(),
+            min: 1,
+            max: CoyoteConfig.protocolMaxIntensity.toDouble(),
+            divisions: CoyoteConfig.protocolMaxIntensity - 1,
+            onChanged: (value) => setState(
+              () => _config = _config.copyWith(maxIntensity: value.round()),
+            ),
+          ),
+          _CoyoteSlider(
+            label: '触发持续时间',
+            valueLabel: '${_config.duration.inMilliseconds} ms',
+            value: _config.duration.inMilliseconds.toDouble(),
+            min: 100,
+            max: 5000,
+            divisions: 49,
+            onChanged: (value) => setState(
+              () => _config = _config.copyWith(
+                duration: Duration(milliseconds: value.round()),
+              ),
+            ),
+          ),
+          _CoyoteSlider(
+            label: 'Cooldown',
+            valueLabel:
+                '${(_config.cooldown.inMilliseconds / 1000).toStringAsFixed(1)} s',
+            value: _config.cooldown.inMilliseconds.toDouble().clamp(500, 60000),
+            min: 500,
+            max: 60000,
+            divisions: 119,
+            onChanged: (value) => setState(
+              () => _config = _config.copyWith(
+                cooldown: Duration(milliseconds: value.round()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const ValueKey('simulation_test'),
+                  onPressed: _test,
+                  icon: const Icon(Icons.bolt),
+                  label: const Text('模拟测试'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  key: const ValueKey('simulation_emergency_stop'),
+                  onPressed: widget.coordinator.emergencyStop,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.alert,
+                  ),
+                  icon: const Icon(Icons.stop_circle_outlined),
+                  label: const Text('立即停止'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            key: const ValueKey('simulation_clear_history'),
+            onPressed: device.clearHistory,
+            icon: const Icon(Icons.delete_sweep_outlined),
+            label: Text('清空记录（${device.history.length}）'),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            key: const ValueKey('simulation_save'),
+            onPressed: () {
+              widget.coordinator.updateSimulationConfig(_config);
+              Navigator.pop(context);
+            },
+            icon: const Icon(Icons.check),
+            label: const Text('保存模拟设置'),
           ),
         ],
       ),
