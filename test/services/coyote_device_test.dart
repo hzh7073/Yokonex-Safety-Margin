@@ -432,6 +432,41 @@ void main() {
     expect(task['d'], CoyoteConfig.testDurationLimit.inMilliseconds);
   });
 
+  test('无限模式使用安全分片并等待恢复或急停', () async {
+    device.configure(
+      const CoyoteConfig(
+        channel: CoyoteChannel.a,
+        triggerIntensity: 5,
+        outputDurationMode: CoyoteOutputDurationMode.untilRecovery,
+      ),
+    );
+    await _pair(device, transport);
+    transport.sent.clear();
+
+    device.emit(
+      const TriggerEvent(
+        sessionId: 'continuous',
+        sequence: 1,
+        elapsed: Duration.zero,
+        reason: TriggerReason.outside,
+      ),
+    );
+    await _flush();
+
+    final task = transport.sent
+        .map(_rpc)
+        .where((value) => value['m'] == 'device.op')
+        .map((value) => value['data'] as Map<String, dynamic>)
+        .firstWhere((value) => value['t'] == 4);
+    expect(task['d'], CoyoteConfig.protocolChunkDuration.inMilliseconds);
+
+    await device.stop();
+    expect(
+      transport.sent.map(_rpc).any((value) => value['m'] == 'device.op.clear'),
+      isTrue,
+    );
+  });
+
   test('急停立即 clear 全部任务并将两个通道归零', () async {
     await _pair(device, transport);
     transport.sent.clear();

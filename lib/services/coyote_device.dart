@@ -34,6 +34,7 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
   Timer? _helloTimer;
   Timer? _pingTimer;
   Timer? _safetyStopTimer;
+  Timer? _outputRefreshTimer;
   Future<void> _commands = Future.value();
   int _requestSequence = 0;
   int _missedPongs = 0;
@@ -158,7 +159,11 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
         ? config.duration
         : CoyoteConfig.testDurationLimit;
     _log('Test pulse requested');
-    await _startOutput(intensity: intensity, duration: duration);
+    await _startOutput(
+      intensity: intensity,
+      durationLimit: duration,
+      repeatUntilStopped: false,
+    );
   }
 
   @override
@@ -177,7 +182,11 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
     unawaited(
       _startOutput(
         intensity: _clampIntensity(config.triggerIntensity),
-        duration: config.duration,
+        durationLimit:
+            config.outputDurationMode == CoyoteOutputDurationMode.maximum
+            ? config.duration
+            : null,
+        repeatUntilStopped: true,
         event: event,
       ).catchError((Object value) {
         _fail(_message(value, '郊狼输出失败'));
@@ -187,7 +196,8 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
 
   Future<void> _startOutput({
     required int intensity,
-    required Duration duration,
+    required Duration? durationLimit,
+    required bool repeatUntilStopped,
     TriggerEvent? event,
   }) async {
     final clientId = _clientId;
@@ -197,34 +207,71 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
     }
     final safeIntensity = _clampIntensity(intensity);
     if (safeIntensity <= 0) throw StateError('郊狼强度必须大于 0');
-    final safeDuration = Duration(
-      milliseconds: duration.inMilliseconds.clamp(
-        CoyoteConfig.minDuration.inMilliseconds,
-        CoyoteConfig.maxDuration.inMilliseconds,
-      ),
-    );
+    final safeDurationLimit = durationLimit == null
+        ? null
+        : Duration(
+            milliseconds: durationLimit.inMilliseconds.clamp(
+              CoyoteConfig.minDuration.inMilliseconds,
+              CoyoteConfig.maxDuration.inMilliseconds,
+            ),
+          );
     final token = ++_outputToken;
     _safetyStopTimer?.cancel();
+    _outputRefreshTimer?.cancel();
     final channels = _selectedChannels(event);
-    final frames = _framesForDuration(safeDuration);
+    await _sendOutputChunk(
+      token: token,
+      clientId: clientId,
+      slotId: device.slotId,
+      channels: channels,
+      intensity: safeIntensity,
+      remaining: safeDurationLimit,
+      repeatUntilStopped: repeatUntilStopped,
+    );
+    if (token != _outputToken) return;
+    if (safeDurationLimit != null) {
+      _safetyStopTimer = Timer(safeDurationLimit, () {
+        if (token == _outputToken) {
+          unawaited(emergencyStop(notify: false));
+        }
+      });
+    }
+  }
+
+  Future<void> _sendOutputChunk({
+    required int token,
+    required String clientId,
+    required String slotId,
+    required List<int> channels,
+    required int intensity,
+    required Duration? remaining,
+    required bool repeatUntilStopped,
+  }) async {
+    if (token != _outputToken || !connected) return;
+    final chunkDuration =
+        remaining == null || remaining > CoyoteConfig.protocolChunkDuration
+        ? CoyoteConfig.protocolChunkDuration
+        : remaining;
+    if (chunkDuration <= Duration.zero) return;
+    final frames = _framesForDuration(chunkDuration);
     for (final channel in channels) {
       if (token != _outputToken) return;
       await _sendOperate(clientId, {
-        's': device.slotId,
+        's': slotId,
         't': 4,
         'c': channel,
         'p': 1,
-        'd': safeDuration.inMilliseconds,
+        'd': chunkDuration.inMilliseconds,
         'im': true,
-        'v': safeIntensity,
+        'v': intensity,
       }, outputToken: token);
       if (token != _outputToken) return;
       await _sendOperate(clientId, {
-        's': device.slotId,
+        's': slotId,
         't': 0,
         'c': channel,
         'p': 1,
-        'd': safeDuration.inMilliseconds,
+        'd': chunkDuration.inMilliseconds,
         'im': true,
         'v': frames,
         'ver': 3,
@@ -232,14 +279,31 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
     }
     if (token != _outputToken) return;
     _log('Pulse/task sent');
-    _safetyStopTimer = Timer(
-      safeDuration + const Duration(milliseconds: 150),
-      () {
-        if (token == _outputToken) {
-          unawaited(emergencyStop(notify: false));
-        }
-      },
-    );
+    if (!repeatUntilStopped) return;
+    // A finite task that already spans the remaining limit needs no refresh.
+    if (remaining != null && remaining <= chunkDuration) return;
+    const lead = Duration(milliseconds: 250);
+    final refreshAfter = chunkDuration > lead
+        ? chunkDuration - lead
+        : chunkDuration;
+    final nextRemaining = remaining == null ? null : remaining - refreshAfter;
+    if (nextRemaining != null && nextRemaining <= Duration.zero) return;
+    _outputRefreshTimer = Timer(refreshAfter, () {
+      if (token != _outputToken) return;
+      unawaited(
+        _sendOutputChunk(
+          token: token,
+          clientId: clientId,
+          slotId: slotId,
+          channels: channels,
+          intensity: intensity,
+          remaining: nextRemaining,
+          repeatUntilStopped: true,
+        ).catchError((Object value) {
+          _fail(_message(value, '郊狼持续输出失败'));
+        }),
+      );
+    });
   }
 
   int _clampIntensity(int requested) => requested.clamp(
@@ -282,6 +346,8 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
   Future<void> emergencyStop({bool notify = true}) async {
     _safetyStopTimer?.cancel();
     _safetyStopTimer = null;
+    _outputRefreshTimer?.cancel();
+    _outputRefreshTimer = null;
     _outputToken++;
     final clientId = _clientId;
     final slotIds = _devices.values
@@ -646,6 +712,8 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
     _pingTimer = null;
     _safetyStopTimer?.cancel();
     _safetyStopTimer = null;
+    _outputRefreshTimer?.cancel();
+    _outputRefreshTimer = null;
   }
 
   void _clearSession() {

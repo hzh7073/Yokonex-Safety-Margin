@@ -93,6 +93,24 @@ void main() {
     expect(device.history.single.stopped, isTrue);
   });
 
+  test('无限模式保持输出直到恢复链路调用 stop', () async {
+    device.configure(
+      const CoyoteConfig(
+        duration: Duration(milliseconds: 100),
+        outputDurationMode: CoyoteOutputDurationMode.untilRecovery,
+      ),
+    );
+    device.emit(event());
+
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(device.activePulse, isNotNull);
+    expect(device.activePulse!.untilRecovery, isTrue);
+    expect(device.activeRemaining, isNull);
+
+    await device.stop();
+    expect(device.activePulse, isNull);
+  });
+
   test('历史记录有容量上限', () {
     for (var i = 0; i < SimulationOutputController.maxHistory + 10; i++) {
       now = now.add(const Duration(seconds: 4));

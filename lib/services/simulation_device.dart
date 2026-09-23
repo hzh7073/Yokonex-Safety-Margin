@@ -16,6 +16,7 @@ class SimulationPulse {
     required this.intensity,
     required this.waveform,
     required this.duration,
+    required this.untilRecovery,
     required this.isTest,
     this.event,
     this.endedAt,
@@ -27,6 +28,7 @@ class SimulationPulse {
   final int intensity;
   final CoyoteWaveform waveform;
   final Duration duration;
+  final bool untilRecovery;
   final bool isTest;
   final TriggerEvent? event;
   final DateTime? endedAt;
@@ -39,6 +41,7 @@ class SimulationPulse {
         intensity: intensity,
         waveform: waveform,
         duration: duration,
+        untilRecovery: untilRecovery,
         isTest: isTest,
         event: event,
         endedAt: endedAt ?? this.endedAt,
@@ -66,9 +69,9 @@ class SimulationOutputController extends ChangeNotifier implements TriggerSink {
   bool get connected => true;
   bool get readyToOutput => config.triggerIntensity > 0;
   List<SimulationPulse> get history => List.unmodifiable(_history);
-  Duration get activeRemaining {
+  Duration? get activeRemaining {
     final pulse = activePulse;
-    if (pulse == null) return Duration.zero;
+    if (pulse == null || pulse.untilRecovery) return null;
     final remaining = pulse.duration - _now().difference(pulse.startedAt);
     return remaining.isNegative ? Duration.zero : remaining;
   }
@@ -96,6 +99,8 @@ class SimulationOutputController extends ChangeNotifier implements TriggerSink {
     _startPulse(
       intensity: _clampIntensity(config.triggerIntensity),
       duration: config.duration,
+      untilRecovery:
+          config.outputDurationMode == CoyoteOutputDurationMode.untilRecovery,
       event: event,
       isTest: false,
     );
@@ -114,7 +119,12 @@ class SimulationOutputController extends ChangeNotifier implements TriggerSink {
     final duration = config.duration < CoyoteConfig.testDurationLimit
         ? config.duration
         : CoyoteConfig.testDurationLimit;
-    _startPulse(intensity: intensity, duration: duration, isTest: true);
+    _startPulse(
+      intensity: intensity,
+      duration: duration,
+      untilRecovery: false,
+      isTest: true,
+    );
   }
 
   Future<void> stop() async {
@@ -163,6 +173,7 @@ class SimulationOutputController extends ChangeNotifier implements TriggerSink {
   void _startPulse({
     required int intensity,
     required Duration duration,
+    required bool untilRecovery,
     required bool isTest,
     TriggerEvent? event,
   }) {
@@ -173,6 +184,7 @@ class SimulationOutputController extends ChangeNotifier implements TriggerSink {
       intensity: _clampIntensity(intensity),
       waveform: config.waveform,
       duration: duration,
+      untilRecovery: untilRecovery,
       isTest: isTest,
       event: event,
     );
@@ -180,6 +192,14 @@ class SimulationOutputController extends ChangeNotifier implements TriggerSink {
     _history.add(pulse);
     if (_history.length > maxHistory) _history.removeAt(0);
     final token = ++_outputToken;
+    if (untilRecovery) {
+      developer.log(
+        'Simulation output remains active until recovery or stop',
+        name: 'SafetyMargin',
+      );
+      notifyListeners();
+      return;
+    }
     _timer = Timer(duration, () {
       if (_disposed || token != _outputToken) return;
       final completed = activePulse;

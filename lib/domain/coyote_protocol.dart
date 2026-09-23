@@ -9,6 +9,8 @@ enum CoyoteConnectionMode {
   loopback,
 }
 
+enum CoyoteOutputDurationMode { untilRecovery, maximum }
+
 class CoyoteWaveformData {
   const CoyoteWaveformData({
     required this.id,
@@ -114,6 +116,7 @@ class CoyoteConfig {
     this.triggerIntensity = 5,
     this.maxIntensity = 20,
     this.duration = const Duration(seconds: 1),
+    this.outputDurationMode = CoyoteOutputDurationMode.maximum,
     this.cooldown = const Duration(seconds: 3),
     this.directionalMapping = false,
     this.connectionMode = CoyoteConnectionMode.privateRelay,
@@ -122,7 +125,8 @@ class CoyoteConfig {
 
   static const protocolMaxIntensity = 200;
   static const minDuration = Duration(milliseconds: 100);
-  static const maxDuration = Duration(seconds: 5);
+  static const maxDuration = Duration(minutes: 5);
+  static const protocolChunkDuration = Duration(seconds: 5);
   static const minCooldown = Duration(milliseconds: 500);
   static const maxCooldown = Duration(minutes: 1);
   static const testIntensityLimit = 3;
@@ -135,6 +139,7 @@ class CoyoteConfig {
   final int triggerIntensity;
   final int maxIntensity;
   final Duration duration;
+  final CoyoteOutputDurationMode outputDurationMode;
   final Duration cooldown;
   final bool directionalMapping;
   final CoyoteConnectionMode connectionMode;
@@ -171,6 +176,7 @@ class CoyoteConfig {
     int? triggerIntensity,
     int? maxIntensity,
     Duration? duration,
+    CoyoteOutputDurationMode? outputDurationMode,
     Duration? cooldown,
     bool? directionalMapping,
     CoyoteConnectionMode? connectionMode,
@@ -181,6 +187,7 @@ class CoyoteConfig {
     triggerIntensity: triggerIntensity ?? this.triggerIntensity,
     maxIntensity: maxIntensity ?? this.maxIntensity,
     duration: duration ?? this.duration,
+    outputDurationMode: outputDurationMode ?? this.outputDurationMode,
     cooldown: cooldown ?? this.cooldown,
     directionalMapping: directionalMapping ?? this.directionalMapping,
     connectionMode: connectionMode ?? this.connectionMode,
@@ -193,6 +200,7 @@ class CoyoteConfig {
     'triggerIntensity': triggerIntensity,
     'maxIntensity': maxIntensity,
     'durationMilliseconds': duration.inMilliseconds,
+    'outputDurationMode': outputDurationMode.name,
     'cooldownMilliseconds': cooldown.inMilliseconds,
     'directionalMapping': directionalMapping,
     'connectionMode': connectionMode.name,
@@ -206,6 +214,10 @@ class CoyoteConfig {
       triggerIntensity: json['triggerIntensity'] as int,
       maxIntensity: json['maxIntensity'] as int,
       duration: Duration(milliseconds: json['durationMilliseconds'] as int),
+      outputDurationMode: CoyoteOutputDurationMode.values.byName(
+        json['outputDurationMode'] as String? ??
+            CoyoteOutputDurationMode.maximum.name,
+      ),
       cooldown: Duration(milliseconds: json['cooldownMilliseconds'] as int),
       directionalMapping: json['directionalMapping'] as bool? ?? false,
       connectionMode: CoyoteConnectionMode.values.byName(

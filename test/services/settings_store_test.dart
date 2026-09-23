@@ -42,7 +42,8 @@ void main() {
           privateRelayUrl: 'wss://relay.example.test/dglab-v4',
           triggerIntensity: 8,
           maxIntensity: 16,
-          duration: Duration(milliseconds: 900),
+          duration: Duration(seconds: 240),
+          outputDurationMode: CoyoteOutputDurationMode.untilRecovery,
           cooldown: Duration(seconds: 4),
           directionalMapping: true,
         ),
@@ -75,6 +76,11 @@ void main() {
     expect(loaded.coyoteConfig.channel, CoyoteChannel.both);
     expect(loaded.coyoteConfig.triggerIntensity, 8);
     expect(loaded.coyoteConfig.maxIntensity, 16);
+    expect(loaded.coyoteConfig.duration, const Duration(seconds: 240));
+    expect(
+      loaded.coyoteConfig.outputDurationMode,
+      CoyoteOutputDurationMode.untilRecovery,
+    );
     expect(loaded.coyoteConfig.directionalMapping, isTrue);
     expect(
       loaded.coyoteConfig.connectionMode,

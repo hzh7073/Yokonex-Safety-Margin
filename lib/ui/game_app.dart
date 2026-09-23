@@ -2939,19 +2939,54 @@ class _CoyoteSettingsSheetState extends State<_CoyoteSettingsSheet> {
               () => _config = _config.copyWith(maxIntensity: value.round()),
             ),
           ),
-          _CoyoteSlider(
-            label: '触发持续时间',
-            valueLabel: '${_config.duration.inMilliseconds} ms',
-            value: _config.duration.inMilliseconds.toDouble(),
-            min: 100,
-            max: 5000,
-            divisions: 49,
-            onChanged: (value) => setState(
+          const SizedBox(height: 8),
+          const Text('持续触发方式', style: TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          SegmentedButton<CoyoteOutputDurationMode>(
+            key: const ValueKey('coyote_output_duration_mode'),
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: CoyoteOutputDurationMode.untilRecovery,
+                label: Text('无限制（直到恢复）'),
+              ),
+              ButtonSegment(
+                value: CoyoteOutputDurationMode.maximum,
+                label: Text('设置最长时间'),
+              ),
+            ],
+            selected: {_config.outputDurationMode},
+            onSelectionChanged: (selection) => setState(
               () => _config = _config.copyWith(
-                duration: Duration(milliseconds: value.round()),
+                outputDurationMode: selection.first,
               ),
             ),
           ),
+          if (_config.outputDurationMode == CoyoteOutputDurationMode.maximum)
+            _CoyoteSlider(
+              label: '最长输出时间',
+              valueLabel: '${_config.duration.inSeconds.clamp(1, 300)} 秒',
+              value: _config.duration.inSeconds
+                  .toDouble()
+                  .clamp(1, 300)
+                  .toDouble(),
+              min: 1,
+              max: 300,
+              divisions: 299,
+              onChanged: (value) => setState(
+                () => _config = _config.copyWith(
+                  duration: Duration(seconds: value.round()),
+                ),
+              ),
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.only(top: 10, bottom: 8),
+              child: Text(
+                '越界或姿势错误期间持续输出；恢复正确姿势、急停、断线或结束游戏时立即停止。',
+                style: TextStyle(color: AppColors.muted),
+              ),
+            ),
           _CoyoteSlider(
             label: 'Cooldown',
             valueLabel:
@@ -3116,7 +3151,9 @@ class _SimulationSettingsSheetState extends State<_SimulationSettingsSheet> {
                   '${active.isTest ? '测试' : 'Safety 事件'} · ${_channels(active.channels)} · ${active.intensity}',
                 ),
                 subtitle: Text(
-                  '${active.waveform.name} · 剩余 ${(device.activeRemaining.inMilliseconds / 1000).toStringAsFixed(1)} s',
+                  active.untilRecovery
+                      ? '${active.waveform.name} · 持续到姿势恢复'
+                      : '${active.waveform.name} · 剩余 ${((device.activeRemaining ?? Duration.zero).inMilliseconds / 1000).toStringAsFixed(1)} s',
                 ),
               ),
             )
@@ -3203,19 +3240,54 @@ class _SimulationSettingsSheetState extends State<_SimulationSettingsSheet> {
               () => _config = _config.copyWith(maxIntensity: value.round()),
             ),
           ),
-          _CoyoteSlider(
-            label: '触发持续时间',
-            valueLabel: '${_config.duration.inMilliseconds} ms',
-            value: _config.duration.inMilliseconds.toDouble(),
-            min: 100,
-            max: 5000,
-            divisions: 49,
-            onChanged: (value) => setState(
+          const SizedBox(height: 8),
+          const Text('持续触发方式', style: TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          SegmentedButton<CoyoteOutputDurationMode>(
+            key: const ValueKey('simulation_output_duration_mode'),
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: CoyoteOutputDurationMode.untilRecovery,
+                label: Text('无限制（直到恢复）'),
+              ),
+              ButtonSegment(
+                value: CoyoteOutputDurationMode.maximum,
+                label: Text('设置最长时间'),
+              ),
+            ],
+            selected: {_config.outputDurationMode},
+            onSelectionChanged: (selection) => setState(
               () => _config = _config.copyWith(
-                duration: Duration(milliseconds: value.round()),
+                outputDurationMode: selection.first,
               ),
             ),
           ),
+          if (_config.outputDurationMode == CoyoteOutputDurationMode.maximum)
+            _CoyoteSlider(
+              label: '最长输出时间',
+              valueLabel: '${_config.duration.inSeconds.clamp(1, 300)} 秒',
+              value: _config.duration.inSeconds
+                  .toDouble()
+                  .clamp(1, 300)
+                  .toDouble(),
+              min: 1,
+              max: 300,
+              divisions: 299,
+              onChanged: (value) => setState(
+                () => _config = _config.copyWith(
+                  duration: Duration(seconds: value.round()),
+                ),
+              ),
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.only(top: 10, bottom: 8),
+              child: Text(
+                '异常期间保持模拟输出；恢复正确姿势、急停或结束游戏时立即停止。',
+                style: TextStyle(color: AppColors.muted),
+              ),
+            ),
           _CoyoteSlider(
             label: 'Cooldown',
             valueLabel:

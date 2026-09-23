@@ -714,6 +714,12 @@ void main() {
     expect(find.byKey(const ValueKey('coyote_channel')), findsOneWidget);
     expect(find.byKey(const ValueKey('coyote_waveform')), findsOneWidget);
     expect(find.text('最大允许强度'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('coyote_output_duration_mode')),
+      findsOneWidget,
+    );
+    expect(find.text('无限制（直到恢复）'), findsOneWidget);
+    expect(find.text('设置最长时间'), findsOneWidget);
     expect(find.byKey(const ValueKey('coyote_emergency_stop')), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('coyote_connect')));
