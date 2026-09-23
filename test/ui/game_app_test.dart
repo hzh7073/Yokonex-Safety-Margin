@@ -10,6 +10,7 @@ import 'package:safety_margin/services/settings_store.dart';
 import 'package:safety_margin/services/coyote_device.dart';
 import 'package:safety_margin/services/coyote_transport.dart';
 import 'package:safety_margin/services/ems_device.dart';
+import 'package:safety_margin/services/speech_output.dart';
 import 'package:safety_margin/ui/game_app.dart';
 import 'package:safety_margin/ui/app_localizations.dart';
 import 'package:safety_margin/ui/app_theme.dart';
@@ -69,7 +70,61 @@ class _WidgetCoyoteTransport implements CoyoteTransport {
   Future<void> dispose() => controller.close();
 }
 
+class _RecordingSpeechOutput implements SpeechOutput {
+  final spoken = <String>[];
+  int stops = 0;
+
+  @override
+  Future<void> speak(String text, {required String languageTag}) async {
+    spoken.add(text);
+  }
+
+  @override
+  Future<void> stop() async {
+    stops++;
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
 void main() {
+  testWidgets('指定姿势使用大字显示并在提示变化时语音播报', (tester) async {
+    late FakePoseCamera camera;
+    final speech = _RecordingSpeechOutput();
+    final c = GameCoordinator(
+      cameraFactory: (readEpoch) => camera = FakePoseCamera(readEpoch),
+      store: FakeSettingsStore(
+        const SavedSetup(
+          config: GameConfig(
+            mode: SafetyGameMode.poseChallenge,
+            startCountdown: Duration.zero,
+          ),
+        ),
+      ),
+      keepAwake: (_) async {},
+      autoTick: false,
+    );
+    await tester.pumpWidget(
+      SafetyMarginApp(coordinator: c, speechOutput: speech),
+    );
+    await tester.pumpAndSettle();
+    camera.emit(fullPose());
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('start_game')));
+    await tester.pump();
+
+    final prompt = c.modeSession.challenge!.label;
+    final promptText = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('large_game_prompt')),
+        matching: find.text(prompt),
+      ),
+    );
+    expect(promptText.style?.fontSize, 28);
+    expect(speech.spoken.any((text) => text.contains(prompt)), isTrue);
+  });
+
   for (final size in [
     const Size(320, 568),
     const Size(390, 844),

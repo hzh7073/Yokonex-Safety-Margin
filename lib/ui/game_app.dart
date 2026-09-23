@@ -21,13 +21,15 @@ import '../services/ems_device.dart';
 import '../services/coyote_device.dart';
 import '../services/output_device.dart';
 import '../services/simulation_device.dart';
+import '../services/speech_output.dart';
 import 'app_localizations.dart';
 import 'app_theme.dart';
 import 'camera_stage.dart';
 
 class SafetyMarginApp extends StatefulWidget {
-  const SafetyMarginApp({super.key, this.coordinator});
+  const SafetyMarginApp({super.key, this.coordinator, this.speechOutput});
   final GameCoordinator? coordinator;
+  final SpeechOutput? speechOutput;
 
   @override
   State<SafetyMarginApp> createState() => _SafetyMarginAppState();
@@ -65,6 +67,7 @@ class _SafetyMarginAppState extends State<SafetyMarginApp> {
       theme: buildAppTheme(),
       home: GameHome(
         coordinator: widget.coordinator,
+        speechOutput: widget.speechOutput,
         onLocaleChanged: _locale.setLocale,
       ),
     ),
@@ -72,8 +75,14 @@ class _SafetyMarginAppState extends State<SafetyMarginApp> {
 }
 
 class GameHome extends StatefulWidget {
-  const GameHome({super.key, this.coordinator, required this.onLocaleChanged});
+  const GameHome({
+    super.key,
+    this.coordinator,
+    this.speechOutput,
+    required this.onLocaleChanged,
+  });
   final GameCoordinator? coordinator;
+  final SpeechOutput? speechOutput;
   final ValueChanged<Locale> onLocaleChanged;
 
   @override
@@ -130,9 +139,16 @@ class _GameHomeState extends State<GameHome> with WidgetsBindingObserver {
   final _goPlayer = AudioPlayer();
   final _alertPlayer = AudioPlayer();
   final _modePlayer = AudioPlayer();
+  late final SpeechOutput _speech;
+  late final bool _ownsSpeech;
   int _lastEventCount = 0;
   bool _modeAudioActive = false;
   int _modeAudioToken = 0;
+  String? _lastPromptKey;
+  TrackingStatus? _lastSpokenTracking;
+  GamePhase? _lastSpokenPhase;
+  SafetyGameMode? _lastReadyMode;
+  String? _speechLocale;
 
   bool get _counting => _countdownRemaining != null;
 
@@ -151,6 +167,8 @@ class _GameHomeState extends State<GameHome> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     c = widget.coordinator ?? GameCoordinator(enableEms: true);
+    _ownsSpeech = widget.speechOutput == null;
+    _speech = widget.speechOutput ?? SystemSpeechOutput();
     c.addListener(_changed);
     WidgetsBinding.instance.addObserver(this);
     unawaited(c.initialize());
@@ -160,13 +178,21 @@ class _GameHomeState extends State<GameHome> with WidgetsBindingObserver {
     if (!mounted) return;
     unawaited(_syncModeAudio());
     final eventCount = c.engine.events.length;
+    String? priorityAnnouncement;
     // 每次新触发（越界/跟踪不完整/画面中无人）都提醒一次，与设备持续输出解耦。
     if (eventCount > _lastEventCount) {
       unawaited(_playSound(_alertPlayer, 'trigger_alert.wav'));
+      final event = c.engine.events.last;
+      priorityAnnouncement = context.l10n.text(
+        _triggerReasonText(event.reason),
+      );
     }
     _lastEventCount = eventCount;
     if (_noticeVersion != c.noticeVersion) {
       _noticeVersion = c.noticeVersion;
+      if (c.notice != null) {
+        priorityAnnouncement = context.l10n.message(c.notice!);
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && c.notice != null) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -175,7 +201,110 @@ class _GameHomeState extends State<GameHome> with WidgetsBindingObserver {
         }
       });
     }
+    _syncSpeech(priorityAnnouncement: priorityAnnouncement);
     setState(() {});
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final locale = _speechLanguageTag(Localizations.localeOf(context));
+    if (_speechLocale == locale) return;
+    _speechLocale = locale;
+    _lastPromptKey = null;
+    _lastReadyMode = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncSpeech();
+    });
+  }
+
+  String _speechLanguageTag(Locale locale) => switch (locale.languageCode) {
+    'zh' => 'zh-CN',
+    'en' => 'en-US',
+    'fr' => 'fr-FR',
+    'de' => 'de-DE',
+    'nl' => 'nl-NL',
+    'es' => 'es-ES',
+    'ko' => 'ko-KR',
+    'ja' => 'ja-JP',
+    'it' => 'it-IT',
+    'ru' => 'ru-RU',
+    _ => locale.toLanguageTag(),
+  };
+
+  String _triggerReasonText(TriggerReason reason) => switch (reason) {
+    TriggerReason.outside => '关节越界',
+    TriggerReason.absent => '离开画面',
+    TriggerReason.movement => '木头人移动',
+    TriggerReason.pose => '姿势未完成',
+    TriggerReason.obstacle => '碰到禁区',
+    TriggerReason.balance => '失去平衡',
+    TriggerReason.wrongZone => '进入错误区域',
+    TriggerReason.customPose => '未对齐目标姿势',
+  };
+
+  void _announce(String text) {
+    final languageTag = _speechLocale;
+    if (languageTag == null || text.trim().isEmpty) return;
+    unawaited(_speech.speak(text, languageTag: languageTag));
+  }
+
+  void _syncSpeech({String? priorityAnnouncement}) {
+    if (!mounted || c.loading) return;
+    final phase = c.engine.phase;
+    final prompt = context.l10n.text(c.modeSession.prompt(c.engine.elapsed));
+    final templateIdentity = c.engine.config.mode == SafetyGameMode.customPose
+        ? identityHashCode(c.customPoseTemplate)
+        : 0;
+    final promptKey = '${c.engine.config.mode.name}:$prompt:$templateIdentity';
+    final phaseChanged = phase != _lastSpokenPhase;
+    final promptChanged = promptKey != _lastPromptKey;
+    final trackingChanged = c.engine.tracking != _lastSpokenTracking;
+    final readyModeChanged = c.engine.config.mode != _lastReadyMode;
+
+    _lastSpokenPhase = phase;
+    _lastPromptKey = promptKey;
+    _lastSpokenTracking = c.engine.tracking;
+    _lastReadyMode = c.engine.config.mode;
+
+    if (priorityAnnouncement != null) {
+      _announce(priorityAnnouncement);
+      return;
+    }
+    if (phaseChanged) {
+      switch (phase) {
+        case GamePhase.ready:
+          _announce('${context.l10n.text(c.engine.config.mode.label)}。$prompt');
+        case GamePhase.running:
+          _announce('${context.l10n.text('游戏中')}。$prompt');
+        case GamePhase.paused:
+          _announce(context.l10n.text('游戏已暂停'));
+        case GamePhase.finished:
+          _announce(context.l10n.text('游戏结束'));
+      }
+      return;
+    }
+    if (phase == GamePhase.ready && readyModeChanged) {
+      _announce('${context.l10n.text(c.engine.config.mode.label)}。$prompt');
+      return;
+    }
+    if (phase == GamePhase.running && promptChanged) {
+      final prefix = c.engine.config.mode == SafetyGameMode.customPose
+          ? '${context.l10n.text('目标姿势已变化')}。'
+          : '';
+      _announce('$prefix$prompt');
+      return;
+    }
+    if (phase == GamePhase.running && trackingChanged) {
+      final trackingText = switch (c.engine.tracking) {
+        TrackingStatus.absent => '画面中无人',
+        TrackingStatus.incomplete => '跟踪不完整',
+        TrackingStatus.outside => '请立即修正动作',
+        TrackingStatus.inside => '姿势正确',
+        TrackingStatus.waiting => '等待人体识别',
+      };
+      _announce(context.l10n.text(trackingText));
+    }
   }
 
   Future<void> _syncModeAudio() async {
@@ -215,6 +344,11 @@ class _GameHomeState extends State<GameHome> with WidgetsBindingObserver {
     unawaited(_goPlayer.dispose());
     unawaited(_alertPlayer.dispose());
     unawaited(_modePlayer.dispose());
+    if (_ownsSpeech) {
+      unawaited(_speech.dispose());
+    } else {
+      unawaited(_speech.stop());
+    }
     super.dispose();
   }
 
@@ -225,6 +359,7 @@ class _GameHomeState extends State<GameHome> with WidgetsBindingObserver {
       return;
     }
     setState(() => _countdownRemaining = seconds);
+    _announce('${context.l10n.text('请进入监测区域')}。$seconds');
     unawaited(_playSound(_tickPlayer, 'countdown_tick.wav'));
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       final remaining = (_countdownRemaining ?? 1) - 1;
@@ -233,10 +368,12 @@ class _GameHomeState extends State<GameHome> with WidgetsBindingObserver {
         _countdownTimer = null;
         if (mounted) setState(() => _countdownRemaining = null);
         unawaited(_playSound(_goPlayer, 'countdown_go.wav'));
+        _announce(context.l10n.text('开始'));
         c.start();
         return;
       }
       if (mounted) setState(() => _countdownRemaining = remaining);
+      _announce('$remaining');
       unawaited(_playSound(_tickPlayer, 'countdown_tick.wav'));
     });
   }
@@ -245,6 +382,7 @@ class _GameHomeState extends State<GameHome> with WidgetsBindingObserver {
     _countdownTimer?.cancel();
     _countdownTimer = null;
     if (_countdownRemaining != null) setState(() => _countdownRemaining = null);
+    unawaited(_speech.stop());
   }
 
   Future<void> _playSound(AudioPlayer player, String asset) async {
@@ -423,6 +561,17 @@ class _GameHomeState extends State<GameHome> with WidgetsBindingObserver {
                                             right: 16,
                                             child: IgnorePointer(
                                               child: _TrackingBar(c: c),
+                                            ),
+                                          ),
+                                        if (c.camera.error == null &&
+                                            !c.loading &&
+                                            !_counting)
+                                          Positioned(
+                                            left: 14,
+                                            right: 14,
+                                            top: 58,
+                                            child: IgnorePointer(
+                                              child: _GamePromptOverlay(c: c),
                                             ),
                                           ),
                                         if (c.engine.phase ==
@@ -908,6 +1057,75 @@ class _TrackingBar extends StatelessWidget {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GamePromptOverlay extends StatelessWidget {
+  const _GamePromptOverlay({required this.c});
+
+  final GameCoordinator c;
+
+  @override
+  Widget build(BuildContext context) {
+    final prompt = context.l10n.text(c.modeSession.prompt(c.engine.elapsed));
+    final status = switch (c.engine.tracking) {
+      TrackingStatus.absent => '画面中无人',
+      TrackingStatus.incomplete => '跟踪不完整',
+      TrackingStatus.outside => '请立即修正动作',
+      TrackingStatus.waiting => '等待人体识别',
+      TrackingStatus.inside => '',
+    };
+    final alert =
+        status.isNotEmpty &&
+        c.engine.phase == GamePhase.running &&
+        c.engine.tracking != TrackingStatus.waiting;
+    return Semantics(
+      liveRegion: true,
+      label: [prompt, if (alert) context.l10n.text(status)].join('。'),
+      child: Container(
+        key: const ValueKey('large_game_prompt'),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: .72),
+          border: Border.all(
+            color: alert ? AppColors.alert : AppColors.yellow,
+            width: 2,
+          ),
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 10)],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              prompt,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                height: 1.08,
+                fontWeight: FontWeight.w900,
+                shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+              ),
+            ),
+            if (alert) ...[
+              const SizedBox(height: 5),
+              Text(
+                context.l10n.text(status),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.alert,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
           ],
         ),
       ),

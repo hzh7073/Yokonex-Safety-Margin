@@ -161,6 +161,7 @@ class _CameraStageState extends State<CameraStage> {
                       child: CustomPaint(
                         painter: PoseOverlayPainter(
                           transform: transform,
+                          sample: c.sample,
                           region: c.editing
                               ? _draft ?? c.region
                               : c.displayRegion,
@@ -275,6 +276,7 @@ class PoseOverlayPainter extends CustomPainter {
   PoseOverlayPainter({
     required this.transform,
     required this.region,
+    this.sample,
     this.obstacle,
     this.dualZones,
     this.customPose,
@@ -284,6 +286,7 @@ class PoseOverlayPainter extends CustomPainter {
   });
   final PreviewTransform transform;
   final ActivityRegion? region;
+  final PoseSample? sample;
   final Rect? obstacle;
   final (ActivityRegion, ActivityRegion)? dualZones;
   final CustomPoseTemplate? customPose;
@@ -428,6 +431,9 @@ class PoseOverlayPainter extends CustomPainter {
           ..strokeWidth = 2,
       );
     }
+    if (sample case final pose?) {
+      _paintDetectedPose(canvas, pose);
+    }
     if (customPose case final template?) {
       _paintCustomPose(canvas, template);
     }
@@ -447,6 +453,33 @@ class PoseOverlayPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2,
       );
+    }
+  }
+
+  void _paintDetectedPose(Canvas canvas, PoseSample pose) {
+    if (!pose.personDetected) return;
+    final linePaint = Paint()
+      ..color = AppColors.aligned.withValues(alpha: .95)
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+    final shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: .68)
+      ..strokeWidth = 7
+      ..strokeCap = StrokeCap.round;
+    for (final edge in skeletonEdges) {
+      final a = pose.landmarks[edge.$1];
+      final b = pose.landmarks[edge.$2];
+      if (a == null || b == null || !a.isReliable || !b.isReliable) continue;
+      final start = transform.toViewport(a.position);
+      final end = transform.toViewport(b.position);
+      canvas.drawLine(start, end, shadowPaint);
+      canvas.drawLine(start, end, linePaint);
+    }
+    for (final entry in pose.landmarks.entries) {
+      if (!entry.value.isReliable) continue;
+      final point = transform.toViewport(entry.value.position);
+      canvas.drawCircle(point, 6, Paint()..color = Colors.black87);
+      canvas.drawCircle(point, 4, Paint()..color = AppColors.aligned);
     }
   }
 
