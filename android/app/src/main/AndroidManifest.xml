@@ -11,6 +11,7 @@
     <application
         android:label="役次元-画地为牢"
         android:name="${applicationName}"
+        android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"

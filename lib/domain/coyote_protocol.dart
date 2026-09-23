@@ -2,6 +2,8 @@ enum CoyoteChannel { a, b, both }
 
 enum CoyoteWaveform { extrusion, bubble, rhythm, airWaves, dance, climb }
 
+enum CoyoteConnectionMode { officialRelay, localNetwork, loopback }
+
 class CoyoteWaveformData {
   const CoyoteWaveformData({
     required this.id,
@@ -109,6 +111,7 @@ class CoyoteConfig {
     this.duration = const Duration(seconds: 1),
     this.cooldown = const Duration(seconds: 3),
     this.directionalMapping = false,
+    this.connectionMode = CoyoteConnectionMode.officialRelay,
   });
 
   static const protocolMaxIntensity = 200;
@@ -126,6 +129,7 @@ class CoyoteConfig {
   final Duration duration;
   final Duration cooldown;
   final bool directionalMapping;
+  final CoyoteConnectionMode connectionMode;
 
   bool get isValid =>
       triggerIntensity >= 0 &&
@@ -145,6 +149,7 @@ class CoyoteConfig {
     Duration? duration,
     Duration? cooldown,
     bool? directionalMapping,
+    CoyoteConnectionMode? connectionMode,
   }) => CoyoteConfig(
     channel: channel ?? this.channel,
     waveform: waveform ?? this.waveform,
@@ -153,6 +158,7 @@ class CoyoteConfig {
     duration: duration ?? this.duration,
     cooldown: cooldown ?? this.cooldown,
     directionalMapping: directionalMapping ?? this.directionalMapping,
+    connectionMode: connectionMode ?? this.connectionMode,
   );
 
   Map<String, Object> toJson() => {
@@ -163,6 +169,7 @@ class CoyoteConfig {
     'durationMilliseconds': duration.inMilliseconds,
     'cooldownMilliseconds': cooldown.inMilliseconds,
     'directionalMapping': directionalMapping,
+    'connectionMode': connectionMode.name,
   };
 
   factory CoyoteConfig.fromJson(Map<String, dynamic> json) {
@@ -174,6 +181,10 @@ class CoyoteConfig {
       duration: Duration(milliseconds: json['durationMilliseconds'] as int),
       cooldown: Duration(milliseconds: json['cooldownMilliseconds'] as int),
       directionalMapping: json['directionalMapping'] as bool? ?? false,
+      connectionMode: CoyoteConnectionMode.values.byName(
+        json['connectionMode'] as String? ??
+            CoyoteConnectionMode.officialRelay.name,
+      ),
     );
     if (!config.isValid) throw const FormatException('郊狼参数无效');
     return config;

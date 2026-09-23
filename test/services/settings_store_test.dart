@@ -38,6 +38,7 @@ void main() {
         outputDeviceType: OutputDeviceType.dglabCoyote,
         coyoteConfig: const CoyoteConfig(
           channel: CoyoteChannel.both,
+          connectionMode: CoyoteConnectionMode.localNetwork,
           triggerIntensity: 8,
           maxIntensity: 16,
           duration: Duration(milliseconds: 900),
@@ -74,6 +75,10 @@ void main() {
     expect(loaded.coyoteConfig.triggerIntensity, 8);
     expect(loaded.coyoteConfig.maxIntensity, 16);
     expect(loaded.coyoteConfig.directionalMapping, isTrue);
+    expect(
+      loaded.coyoteConfig.connectionMode,
+      CoyoteConnectionMode.localNetwork,
+    );
     expect(loaded.simulationConfig.channel, CoyoteChannel.b);
     expect(loaded.simulationConfig.maxIntensity, 9);
   });

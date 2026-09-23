@@ -20,7 +20,7 @@ enum CoyoteConnectionPhase {
 
 class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
   CoyoteDeviceController({CoyoteTransport? transport, DateTime Function()? now})
-    : _transport = transport ?? IoCoyoteTransport(),
+    : _transport = transport ?? AdaptiveCoyoteTransport(),
       _now = now ?? DateTime.now;
 
   static final relayUri = Uri.parse('wss://trex.dungeon-lab.cn/v4');
@@ -52,17 +52,24 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
   void Function(String message)? onFault;
 
   String? get pairingUrl {
-    final targetId = _targetId;
-    if (targetId == null) return null;
-    final appSocket = relayUri.replace(
-      path: '${relayUri.path}/',
-      queryParameters: {'tid': targetId},
-    );
+    final appSocket = pairingSocketUri;
+    if (appSocket == null) return null;
     return Uri.https('dungeon-lab.cn', '/s/', {
       'v': '1',
       'action': 'socket',
       'url': appSocket.toString(),
     }).toString();
+  }
+
+  Uri? get pairingSocketUri {
+    final targetId = _targetId;
+    if (targetId == null) return null;
+    final base = config.connectionMode == CoyoteConnectionMode.officialRelay
+        ? relayUri.replace(path: '${relayUri.path}/')
+        : _transport is CoyotePairingEndpoint
+        ? (_transport as CoyotePairingEndpoint).pairingBaseUri
+        : null;
+    return base?.replace(queryParameters: {'tid': targetId});
   }
 
   List<CoyoteDeviceInfo> get devices => List.unmodifiable(_devices.values);
@@ -76,6 +83,10 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
 
   void configure(CoyoteConfig value) {
     if (!value.isValid) throw const FormatException('郊狼参数无效');
+    if (value.connectionMode != config.connectionMode &&
+        phase != CoyoteConnectionPhase.idle) {
+      unawaited(disconnect());
+    }
     config = value;
     notifyListeners();
   }
@@ -90,7 +101,12 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
     _log('DG-LAB server connecting');
     _subscription = _transport.events.listen(_handleTransportEvent);
     try {
-      await _transport.connect(relayUri);
+      final endpoint = switch (config.connectionMode) {
+        CoyoteConnectionMode.officialRelay => relayUri,
+        CoyoteConnectionMode.localNetwork => Uri.parse('dglab-local://network'),
+        CoyoteConnectionMode.loopback => Uri.parse('dglab-local://loopback'),
+      };
+      await _transport.connect(endpoint);
       _helloTimer = Timer(_helloTimeout, () {
         if (_targetId == null) _fail('DG-LAB 连接超时');
       });

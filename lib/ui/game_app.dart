@@ -2428,6 +2428,15 @@ class _CoyoteSettingsSheetState extends State<_CoyoteSettingsSheet> {
     }
   }
 
+  Future<void> _connect() async {
+    widget.coordinator.updateCoyoteConfig(_config);
+    if (device.phase == CoyoteConnectionPhase.idle) {
+      await device.connect();
+    } else {
+      await device.reconnect();
+    }
+  }
+
   Future<void> _openOnThisDevice() async {
     final pairingUrl = device.pairingUrl;
     if (pairingUrl == null) return;
@@ -2451,6 +2460,7 @@ class _CoyoteSettingsSheetState extends State<_CoyoteSettingsSheet> {
   Widget build(BuildContext context) {
     final connectedDevice = device.activeDevice;
     final pairingUrl = device.pairingUrl;
+    final pairingSocket = device.pairingSocketUri;
     final isConnecting = device.phase == CoyoteConnectionPhase.connecting;
     final canConnect =
         !isConnecting &&
@@ -2485,6 +2495,43 @@ class _CoyoteSettingsSheetState extends State<_CoyoteSettingsSheet> {
               ),
             ],
           ),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<CoyoteConnectionMode>(
+            key: const ValueKey('coyote_connection_mode'),
+            initialValue: _config.connectionMode,
+            decoration: const InputDecoration(labelText: '连接方式'),
+            items: const [
+              DropdownMenuItem(
+                value: CoyoteConnectionMode.officialRelay,
+                child: Text('官方网络服务'),
+              ),
+              DropdownMenuItem(
+                value: CoyoteConnectionMode.localNetwork,
+                child: Text('局域网直连（两台设备）'),
+              ),
+              DropdownMenuItem(
+                value: CoyoteConnectionMode.loopback,
+                child: Text('本机回环（同一台手机）'),
+              ),
+            ],
+            onChanged: device.phase == CoyoteConnectionPhase.idle
+                ? (value) {
+                    if (value != null) {
+                      setState(
+                        () => _config = _config.copyWith(connectionMode: value),
+                      );
+                    }
+                  }
+                : null,
+          ),
+          const SizedBox(height: 6),
+          Text(switch (_config.connectionMode) {
+            CoyoteConnectionMode.officialRelay => '通过 DG-LAB 官方 V4 中继，需要互联网。',
+            CoyoteConnectionMode.localNetwork =>
+              '本应用内置 V4 服务；两台手机需连接同一 Wi-Fi 或热点，不经过官方中继。',
+            CoyoteConnectionMode.loopback =>
+              '本应用和 DG-LAB App 安装在同一台手机时使用；需要允许本应用在后台运行。',
+          }, style: const TextStyle(color: AppColors.muted)),
           if (pairingUrl != null &&
               device.phase == CoyoteConnectionPhase.waitingForScan) ...[
             const SizedBox(height: 16),
@@ -2507,6 +2554,14 @@ class _CoyoteSettingsSheetState extends State<_CoyoteSettingsSheet> {
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.muted),
             ),
+            if (pairingSocket != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${pairingSocket.scheme}://${pairingSocket.host}:${pairingSocket.port}${pairingSocket.path}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            ],
             const SizedBox(height: 10),
             FilledButton.icon(
               key: const ValueKey('coyote_open_app'),
@@ -2521,11 +2576,7 @@ class _CoyoteSettingsSheetState extends State<_CoyoteSettingsSheet> {
               Expanded(
                 child: OutlinedButton.icon(
                   key: const ValueKey('coyote_connect'),
-                  onPressed: canConnect
-                      ? (device.phase == CoyoteConnectionPhase.idle
-                            ? device.connect
-                            : device.reconnect)
-                      : null,
+                  onPressed: canConnect ? _connect : null,
                   icon: Icon(
                     device.phase == CoyoteConnectionPhase.idle
                         ? Icons.link

@@ -645,6 +645,10 @@ void main() {
     await tester.tap(find.text('DG-LAB Coyote'));
     await tester.pumpAndSettle();
     expect(find.text('DG-LAB Coyote 3.0'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('coyote_connection_mode')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('coyote_channel')), findsOneWidget);
     expect(find.byKey(const ValueKey('coyote_waveform')), findsOneWidget);
     expect(find.text('最大允许强度'), findsOneWidget);
