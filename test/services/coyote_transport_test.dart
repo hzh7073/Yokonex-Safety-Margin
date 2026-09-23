@@ -20,6 +20,7 @@ void main() {
     await transport.connect(Uri.parse('dglab-local://loopback'));
     final hello = await helloFuture;
     final controllerId = hello['clientId'] as String;
+    expect(controllerId, matches(RegExp(r'^[0-9a-f]{8}$')));
     final endpoint = transport.pairingBaseUri!.replace(
       queryParameters: {'tid': controllerId},
     );
@@ -38,6 +39,7 @@ void main() {
     final appHello = jsonDecode(appFrames.current as String) as Map;
     expect(appHello['type'], 'hello');
     final clientId = appHello['clientId'] as String;
+    expect(clientId, matches(RegExp(r'^[0-9a-f]{8}$')));
     expect(await appFrames.moveNext(), isTrue);
     final controllerAttached = jsonDecode(appFrames.current as String) as Map;
     expect(controllerAttached['type'], 'controller_attached');

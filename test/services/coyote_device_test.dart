@@ -118,7 +118,7 @@ void main() {
       device.pairingUrl,
       contains(
         Uri.encodeQueryComponent(
-          'wss://trex.dungeon-lab.cn/v4/?tid=controller',
+          '${CoyoteConfig.defaultPrivateRelayUrl}?tid=controller',
         ),
       ),
     );

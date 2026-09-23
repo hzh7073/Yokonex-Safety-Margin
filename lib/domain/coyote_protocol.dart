@@ -2,7 +2,12 @@ enum CoyoteChannel { a, b, both }
 
 enum CoyoteWaveform { extrusion, bubble, rhythm, airWaves, dance, climb }
 
-enum CoyoteConnectionMode { officialRelay, localNetwork, loopback }
+enum CoyoteConnectionMode {
+  privateRelay,
+  officialRelay,
+  localNetwork,
+  loopback,
+}
 
 class CoyoteWaveformData {
   const CoyoteWaveformData({
@@ -111,7 +116,8 @@ class CoyoteConfig {
     this.duration = const Duration(seconds: 1),
     this.cooldown = const Duration(seconds: 3),
     this.directionalMapping = false,
-    this.connectionMode = CoyoteConnectionMode.officialRelay,
+    this.connectionMode = CoyoteConnectionMode.privateRelay,
+    this.privateRelayUrl = defaultPrivateRelayUrl,
   });
 
   static const protocolMaxIntensity = 200;
@@ -121,6 +127,8 @@ class CoyoteConfig {
   static const maxCooldown = Duration(minutes: 1);
   static const testIntensityLimit = 3;
   static const testDurationLimit = Duration(milliseconds: 500);
+  static const defaultPrivateRelayUrl =
+      'wss://38.244.4.154.sslip.io:18444/dglab-v4';
 
   final CoyoteChannel channel;
   final CoyoteWaveform waveform;
@@ -130,6 +138,20 @@ class CoyoteConfig {
   final Duration cooldown;
   final bool directionalMapping;
   final CoyoteConnectionMode connectionMode;
+  final String privateRelayUrl;
+
+  Uri? get privateRelayUri {
+    final uri = Uri.tryParse(privateRelayUrl.trim());
+    if (uri == null ||
+        (uri.scheme != 'ws' && uri.scheme != 'wss') ||
+        uri.host.isEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment ||
+        uri.userInfo.isNotEmpty) {
+      return null;
+    }
+    return uri;
+  }
 
   bool get isValid =>
       triggerIntensity >= 0 &&
@@ -139,7 +161,9 @@ class CoyoteConfig {
       duration >= minDuration &&
       duration <= maxDuration &&
       cooldown >= minCooldown &&
-      cooldown <= maxCooldown;
+      cooldown <= maxCooldown &&
+      (connectionMode != CoyoteConnectionMode.privateRelay ||
+          privateRelayUri != null);
 
   CoyoteConfig copyWith({
     CoyoteChannel? channel,
@@ -150,6 +174,7 @@ class CoyoteConfig {
     Duration? cooldown,
     bool? directionalMapping,
     CoyoteConnectionMode? connectionMode,
+    String? privateRelayUrl,
   }) => CoyoteConfig(
     channel: channel ?? this.channel,
     waveform: waveform ?? this.waveform,
@@ -159,6 +184,7 @@ class CoyoteConfig {
     cooldown: cooldown ?? this.cooldown,
     directionalMapping: directionalMapping ?? this.directionalMapping,
     connectionMode: connectionMode ?? this.connectionMode,
+    privateRelayUrl: privateRelayUrl ?? this.privateRelayUrl,
   );
 
   Map<String, Object> toJson() => {
@@ -170,6 +196,7 @@ class CoyoteConfig {
     'cooldownMilliseconds': cooldown.inMilliseconds,
     'directionalMapping': directionalMapping,
     'connectionMode': connectionMode.name,
+    'privateRelayUrl': privateRelayUrl,
   };
 
   factory CoyoteConfig.fromJson(Map<String, dynamic> json) {
@@ -185,6 +212,8 @@ class CoyoteConfig {
         json['connectionMode'] as String? ??
             CoyoteConnectionMode.officialRelay.name,
       ),
+      privateRelayUrl:
+          json['privateRelayUrl'] as String? ?? defaultPrivateRelayUrl,
     );
     if (!config.isValid) throw const FormatException('郊狼参数无效');
     return config;

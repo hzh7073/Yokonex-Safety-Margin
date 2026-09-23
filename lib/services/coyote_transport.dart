@@ -265,10 +265,17 @@ class EmbeddedV4CoyoteTransport
     _server = null;
   }
 
-  String _newId() => List.generate(
-    16,
-    (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
-  ).join();
+  String _newId() {
+    String value;
+    do {
+      // 官方 V4 Relay 使用 4 个随机字节，即 8 位十六进制 clientId。
+      value = List.generate(
+        4,
+        (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+      ).join();
+    } while (value == _controllerId || _clients.containsKey(value));
+    return value;
+  }
 
   Future<String?> _localIpv4() async {
     final interfaces = await NetworkInterface.list(

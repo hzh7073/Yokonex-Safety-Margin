@@ -6,6 +6,7 @@ import 'package:safety_margin/app/game_coordinator.dart';
 import 'package:safety_margin/domain/game_engine.dart';
 import 'package:safety_margin/domain/game_mode.dart';
 import 'package:safety_margin/domain/pose_sample.dart';
+import 'package:safety_margin/domain/coyote_protocol.dart';
 import 'package:safety_margin/services/settings_store.dart';
 import 'package:safety_margin/services/coyote_device.dart';
 import 'package:safety_margin/services/coyote_transport.dart';
@@ -52,6 +53,7 @@ class _WidgetCoyoteTransport implements CoyoteTransport {
     sync: true,
   );
   int connects = 0;
+  Uri? lastUri;
 
   @override
   Stream<CoyoteTransportEvent> get events => controller.stream;
@@ -59,6 +61,7 @@ class _WidgetCoyoteTransport implements CoyoteTransport {
   @override
   Future<void> connect(Uri uri) async {
     connects++;
+    lastUri = uri;
   }
 
   @override
@@ -677,7 +680,7 @@ void main() {
     await transport.close();
   });
 
-  testWidgets('切换到 DG-LAB 后点击连接会显示官方配对二维码和安全控件', (tester) async {
+  testWidgets('切换到 DG-LAB 后使用预置专用服务器并显示配对二维码', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -704,6 +707,10 @@ void main() {
       find.byKey(const ValueKey('coyote_connection_mode')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('coyote_private_relay_url')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('coyote_channel')), findsOneWidget);
     expect(find.byKey(const ValueKey('coyote_waveform')), findsOneWidget);
     expect(find.text('最大允许强度'), findsOneWidget);
@@ -712,6 +719,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('coyote_connect')));
     await tester.pump();
     expect(coyoteTransport.connects, 1);
+    expect(
+      coyoteTransport.lastUri.toString(),
+      CoyoteConfig.defaultPrivateRelayUrl,
+    );
     coyoteTransport.controller.add(
       const CoyoteTransportMessage({
         'type': 'hello',

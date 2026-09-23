@@ -38,7 +38,8 @@ void main() {
         outputDeviceType: OutputDeviceType.dglabCoyote,
         coyoteConfig: const CoyoteConfig(
           channel: CoyoteChannel.both,
-          connectionMode: CoyoteConnectionMode.localNetwork,
+          connectionMode: CoyoteConnectionMode.privateRelay,
+          privateRelayUrl: 'wss://relay.example.test/dglab-v4',
           triggerIntensity: 8,
           maxIntensity: 16,
           duration: Duration(milliseconds: 900),
@@ -77,7 +78,11 @@ void main() {
     expect(loaded.coyoteConfig.directionalMapping, isTrue);
     expect(
       loaded.coyoteConfig.connectionMode,
-      CoyoteConnectionMode.localNetwork,
+      CoyoteConnectionMode.privateRelay,
+    );
+    expect(
+      loaded.coyoteConfig.privateRelayUrl,
+      'wss://relay.example.test/dglab-v4',
     );
     expect(loaded.simulationConfig.channel, CoyoteChannel.b);
     expect(loaded.simulationConfig.maxIntensity, 9);

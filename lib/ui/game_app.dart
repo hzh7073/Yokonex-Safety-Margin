@@ -2647,11 +2647,21 @@ class _CoyoteSettingsSheetState extends State<_CoyoteSettingsSheet> {
   }
 
   Future<void> _connect() async {
-    widget.coordinator.updateCoyoteConfig(_config);
-    if (device.phase == CoyoteConnectionPhase.idle) {
-      await device.connect();
-    } else {
-      await device.reconnect();
+    try {
+      if (!_config.isValid) throw StateError('专用中转地址必须是有效的 ws:// 或 wss:// 地址');
+      widget.coordinator.updateCoyoteConfig(_config);
+      if (device.phase == CoyoteConnectionPhase.idle) {
+        await device.connect();
+      } else {
+        await device.reconnect();
+      }
+    } on Object catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Bad state: ', '')),
+        ),
+      );
     }
   }
 
@@ -2720,6 +2730,10 @@ class _CoyoteSettingsSheetState extends State<_CoyoteSettingsSheet> {
             decoration: const InputDecoration(labelText: '连接方式'),
             items: const [
               DropdownMenuItem(
+                value: CoyoteConnectionMode.privateRelay,
+                child: Text('我的专用服务器（推荐）'),
+              ),
+              DropdownMenuItem(
                 value: CoyoteConnectionMode.officialRelay,
                 child: Text('官方网络服务'),
               ),
@@ -2744,12 +2758,30 @@ class _CoyoteSettingsSheetState extends State<_CoyoteSettingsSheet> {
           ),
           const SizedBox(height: 6),
           Text(switch (_config.connectionMode) {
+            CoyoteConnectionMode.privateRelay =>
+              '通过已部署的专用 WSS 中转，不要求两台手机处于同一局域网。',
             CoyoteConnectionMode.officialRelay => '通过 DG-LAB 官方 V4 中继，需要互联网。',
             CoyoteConnectionMode.localNetwork =>
               '本应用内置 V4 服务；两台手机需连接同一 Wi-Fi 或热点，不经过官方中继。',
             CoyoteConnectionMode.loopback =>
               '本应用和 DG-LAB App 安装在同一台手机时使用；需要允许本应用在后台运行。',
           }, style: const TextStyle(color: AppColors.muted)),
+          if (_config.connectionMode == CoyoteConnectionMode.privateRelay) ...[
+            const SizedBox(height: 10),
+            TextFormField(
+              key: const ValueKey('coyote_private_relay_url'),
+              initialValue: _config.privateRelayUrl,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                labelText: '专用 V4 中转地址',
+                helperText: '已预置你的服务器；服务器迁移时可在这里修改',
+              ),
+              onChanged: (value) =>
+                  _config = _config.copyWith(privateRelayUrl: value.trim()),
+            ),
+          ],
           if (pairingUrl != null &&
               device.phase == CoyoteConnectionPhase.waitingForScan) ...[
             const SizedBox(height: 16),

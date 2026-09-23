@@ -64,11 +64,16 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
   Uri? get pairingSocketUri {
     final targetId = _targetId;
     if (targetId == null) return null;
-    final base = config.connectionMode == CoyoteConnectionMode.officialRelay
-        ? relayUri.replace(path: '${relayUri.path}/')
-        : _transport is CoyotePairingEndpoint
-        ? (_transport as CoyotePairingEndpoint).pairingBaseUri
-        : null;
+    final base = switch (config.connectionMode) {
+      CoyoteConnectionMode.privateRelay => config.privateRelayUri,
+      CoyoteConnectionMode.officialRelay => relayUri.replace(
+        path: '${relayUri.path}/',
+      ),
+      CoyoteConnectionMode.localNetwork || CoyoteConnectionMode.loopback =>
+        _transport is CoyotePairingEndpoint
+            ? (_transport as CoyotePairingEndpoint).pairingBaseUri
+            : null,
+    };
     return base?.replace(queryParameters: {'tid': targetId});
   }
 
@@ -102,6 +107,7 @@ class CoyoteDeviceController extends ChangeNotifier implements TriggerSink {
     _subscription = _transport.events.listen(_handleTransportEvent);
     try {
       final endpoint = switch (config.connectionMode) {
+        CoyoteConnectionMode.privateRelay => config.privateRelayUri!,
         CoyoteConnectionMode.officialRelay => relayUri,
         CoyoteConnectionMode.localNetwork => Uri.parse('dglab-local://network'),
         CoyoteConnectionMode.loopback => Uri.parse('dglab-local://loopback'),
